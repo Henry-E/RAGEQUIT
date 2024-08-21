@@ -1,89 +1,110 @@
 import * as anchor from "@coral-xyz/anchor";
-import { AutocratClient, SwapType } from "@metadaoproject/futarchy";
+import { SwapType } from "@metadaoproject/futarchy";
 import { BN } from "bn.js";
-import { PublicKey } from '@solana/web3.js';
+import { createClient, getPendingProposals } from "./utils";
+import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 
 export const provider = anchor.AnchorProvider.env();
 anchor.setProvider(provider);
 
-const main = async() => {
-  
-  const AUTOCRAT_PROGRAM_ID = new PublicKey("autoQP9RmUNkzzKRXsMkWicDVZ3h29vvyMDcAYjCxxg")
-  const CONDITIONAL_VAULT_PROGRAM_ID = new PublicKey("VAU1T7S5UuEHmMvXtXMVmpEoQtZ2ya7eRb7gcN47wDp")
-  const AMM_PROGRAM_ID = new PublicKey("AMM5G2nxuKUwCLRYTW7qqEwuoqCtNSjtbipwEmm2g8bH")
+const fetchAmmsFromProposals = (pendingProposals) => {
+  return pendingProposals.map((proposal) => {
+    return {
+      pubKey: proposal.pubKey,
+      failAmm: proposal.failAmm,
+      passAmm: proposal.passAmm,
+    }
+  })
+}
 
-  const newClient = new AutocratClient(provider, AUTOCRAT_PROGRAM_ID, CONDITIONAL_VAULT_PROGRAM_ID, AMM_PROGRAM_ID, []);
-  console.log(provider.publicKey.toBase58())
+const swap = async(_client, direction, amm) => {
+  let swapType = {buy: {}} as SwapType
+  let swapAmount = new BN(1).mul(new BN(10).pow(new BN(6)))
+  let _swapAmount = Math.floor(Math.random() * (700 - 100) + 100);
+  if (direction == 'sell') {
+    swapType = {sell: {}} as SwapType
+    swapAmount = new BN(1).mul(new BN(10).pow(new BN(9))) // The amount to trade
+    _swapAmount = Math.random() * (3 - 1) + 1; // Amount we're trading
+  }
+  
+  console.log(swapType)
+  const ammReserves = await _client.ammClient.getAmm(amm)
+  const swapSim = _client.ammClient.simulateSwap(
+    swapAmount,
+    swapType,
+    ammReserves.baseAmount,
+    ammReserves.quoteAmount,
+    new BN(5000)
+  )
+  
+  
+  try {
+    if(!swapSim.minExpectedOut) {
+      console.log('simulation failed')
+      return
+    }
+    let _outputAmount = swapSim.minExpectedOut.toNumber() / Math.pow(10, 6)
+    if (direction === 'buy') {
+      _outputAmount = swapSim.minExpectedOut.toNumber() / Math.pow(10, 9)
+    }
+    // console.log(swapSim.expectedOut.toNumber())
+    console.log(`Swapping via ${direction} ${_swapAmount} for ${_outputAmount}`)
+    const swapTxn = await _client.ammClient.swap(amm, swapType, _swapAmount, _outputAmount)
+    console.log(swapTxn)
+    return swapTxn
+  } catch (err){
+    console.error(err)
+    return err;
+  }
+}
+
+const main = async() => {
   // SWAP (Simulate trading environment)
   console.log('Swaping')
 
-  const proposalKey = new PublicKey('7wn2uLx4Rgaz5GDsKVw3fEJxXmbTWGxdpyUHPUXoaWjr')
+  const _client = createClient()
 
-  const amms = [
-    new PublicKey('CwwXQQnC2Y46iUNZgUdxpBhWyekWANAgxZWJKf4tAT5d'),
-    new PublicKey('CoZq7BFsXwv5srUYQPFHK3uE3aZrGdZgK5Q1ixcsmoDM')
-  ]
+  const pendingProposals = await getPendingProposals(_client)
 
-  // TODO: Fetch balances of the conditional tokens, if none or not enough exist then call this
-  
   // Mint conditional tokens
-  if(false){
-    const proposal = await newClient.autocrat.account.proposal.fetch(proposalKey)
-    const baseCondTokensTx = await newClient.vaultClient.mintConditionalTokens(proposal.baseVault, 3)
-    const quoteCondTokensTx = await newClient.vaultClient.mintConditionalTokens(proposal.quoteVault, 3000)
-    console.log(baseCondTokensTx)
-    console.log(quoteCondTokensTx)
+  const tokenAddresses = pendingProposals.map(async(proposal) => {
+    const baseAmountToMint = 3; // TODO: Need to mint a reasonable amount
+    const quoteAmountToMint = 3000; // TODO: Need to mint a reasonable amount
+    const baseTokenAccount = getAssociatedTokenAddressSync(proposal.baseVault ,_client.provider.publicKey)
+    const quoteTokenAccount = getAssociatedTokenAddressSync(proposal.quoteVault ,_client.provider.publicKey)
+
+    const baseTokenBalance = await _client.provider.connection.getTokenAccountBalance(baseTokenAccount)
+
+    if(!baseTokenBalance || baseTokenBalance.value.uiAmount === 0){
+      console.log(`No balance located for Base Conditional Token`)
+      const baseCondTokensTx = await _client.vaultClient.mintConditionalTokens(proposal.baseVault, baseAmountToMint)
+      console.log(`Minted ${baseAmountToMint} Base Conditional Tokens ${baseCondTokensTx}`)
     }
+
+    const quoteTokenBalance = await _client.provider.connection.getTokenAccountBalance(quoteTokenAccount)
+    if(!quoteTokenBalance || quoteTokenBalance.value.uiAmount === 0){
+      console.log(`No balance located for Quote Conditional Token`)
+      const quoteCondTokensTx = await _client.vaultClient.mintConditionalTokens(proposal.quoteVault, quoteAmountToMint)
+      console.log(`Minted ${quoteAmountToMint} Quote Conditional Tokens ${quoteCondTokensTx}`)
+    }
+    
+  })
   
-  const swap = async(direction, amm) => {
-    let swapType = {buy: {}} as SwapType
-    let swapAmount = new BN(1).mul(new BN(10).pow(new BN(6)))
-    let _swapAmount = Math.floor(Math.random() * (700 - 100) + 100);
-    if (direction == 'sell') {
-      swapType = {sell: {}} as SwapType
-      swapAmount = new BN(1).mul(new BN(10).pow(new BN(9)))
-      _swapAmount = Math.random() * (3 - 1) + 1; // Amount we're trading
-    }
-    
-    console.log(swapType)
-    const ammReserves = await newClient.ammClient.getAmm(amm)
-    const swapSim = newClient.ammClient.simulateSwap(
-      swapAmount,
-      swapType,
-      ammReserves.baseAmount,
-      ammReserves.quoteAmount,
-      new BN(5000)
-    )
-    
-    
-    try {
-      if(!swapSim.minExpectedOut) {
-        console.log('simulation failed')
-        return
-      }
-      let _outputAmount = swapSim.minExpectedOut.toNumber() / Math.pow(10, 6)
-      if (direction === 'buy') {
-        _outputAmount = swapSim.minExpectedOut.toNumber() / Math.pow(10, 9)
-      }
-      // console.log(swapSim.expectedOut.toNumber())
-      console.log(`Swapping via ${direction} ${_swapAmount} for ${_outputAmount}`)
-      const swapTxn = await newClient.ammClient.swap(amm, swapType, _swapAmount, _outputAmount)
-      console.log(swapTxn)
-      return swapTxn
-    } catch (err){
-      console.error(err)
-      return err;
-    }
-  }
+  // NOTE: This is fetching all active proposals and their AMMs 
+  const proposalAmm = fetchAmmsFromProposals(pendingProposals)
   
-  amms.map((amm) => {
+  proposalAmm.map((proposal) => {
     setTimeout(async () => {
-      console.log(`Swapping with ${amm.toBase58()}`)
+      // TODO: We should refactor this.
+      console.log(`Swapping with Fail ${proposal.failAmm.toBase58()}`)
+      console.log(`Swapping with Pass ${proposal.passAmm.toBase58()}`)
       try {
         // Buy
-        await swap('buy', amm)
+        await swap(_client, 'buy fail', proposal.failAmm)
+        await swap(_client, 'buy pass', proposal.passAmm)
         // Sell
-        await swap('sell', amm)
+        await swap(_client, 'sell fail', proposal.failAmm)
+        await swap(_client, 'sell pass', proposal.passAmm)
       } catch (err) {
         console.error(err)
       }
