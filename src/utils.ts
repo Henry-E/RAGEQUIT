@@ -13,6 +13,7 @@ export const createClient = () => {
   const AMM_PROGRAM_ID = new PublicKey("AMM5G2nxuKUwCLRYTW7qqEwuoqCtNSjtbipwEmm2g8bH")
 
   const newClient = new AutocratClient(provider, AUTOCRAT_PROGRAM_ID, CONDITIONAL_VAULT_PROGRAM_ID, AMM_PROGRAM_ID, []);
+
   return newClient;
 }
 
@@ -20,9 +21,7 @@ export const getPendingProposals = async(_client) => {
   const proposals = await _client.autocrat.account.proposal.all();
 
   const pendingProposals = proposals.filter((proposal) => {
-    proposal.account.st
     return proposal.account.state.pending
-    
   });
 
   return pendingProposals;

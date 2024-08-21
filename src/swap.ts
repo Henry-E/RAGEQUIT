@@ -1,30 +1,64 @@
 import * as anchor from "@coral-xyz/anchor";
-import { SwapType } from "@metadaoproject/futarchy";
+import { SwapType, getVaultRevertMintAddr, getVaultFinalizeMintAddr, CONDITIONAL_VAULT_PROGRAM_ID } from "@metadaoproject/futarchy";
 import { BN } from "bn.js";
 import { createClient, getPendingProposals } from "./utils";
-import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { getAssociatedTokenAddressSync, getTokenMetadata } from "@solana/spl-token";
+import { PublicKey, RpcResponseAndContext, TokenAmount } from "@solana/web3.js";
 
 export const provider = anchor.AnchorProvider.env();
 anchor.setProvider(provider);
 
-const fetchAmmsFromProposals = (pendingProposals) => {
+type ProposalAmmsDao = {
+  daoKey: PublicKey;
+  pubKey: PublicKey;
+  failAmm: PublicKey;
+  passAmm: PublicKey;
+}
+
+const fetchAmmsFromProposals = (pendingProposals): ProposalAmmsDao[] => {
   return pendingProposals.map((proposal) => {
     return {
-      pubKey: proposal.pubKey,
-      failAmm: proposal.failAmm,
-      passAmm: proposal.passAmm,
+      daoKey: proposal.account.dao,
+      pubKey: proposal.publicKey,
+      failAmm: proposal.account.failAmm,
+      passAmm: proposal.account.passAmm,
     }
   })
 }
 
-const swap = async(_client, direction, amm) => {
+
+const getTokenDecimals = async(_client, dao) => {
+  const tokenData = await provider.connection.getParsedAccountInfo(dao.tokenMint)
+  // TODO: What if parsed doesn't exist?
+  const baseTokenDecimals = tokenData.value.data.parsed.info.decimals
+  return baseTokenDecimals
+}
+
+const getInAmount = async(amount: number | undefined = undefined, dao, decimals: number, _client) => {
+  if(!amount){
+    const minBaseFutarchicLiquidity = dao.minBaseFutarchicLiquidity.toNumber() / 10 ** (decimals ?? 6) // TODO: Note this is bad
+    const minQuoteFutarchicLiquidity = dao.minQuoteFutarchicLiquidity.toNumber() / 10 ** 6 // flagged for now given we know it's USDC
+    // Random amount because nothing is set...
+    const tradeAmountBase = minBaseFutarchicLiquidity / (Math.random() * (8 - 6) + 6)
+    const tradeAmountQuote = minQuoteFutarchicLiquidity / Math.floor(Math.random() * (8 - 6) + 6)
+    return { tradeAmountBase, tradeAmountQuote}
+  }
+  
+  return { tradeAmountBase: amount, tradeAmountQuote: amount }
+}
+
+const swap = async(_client, direction: string, amm: PublicKey, dao) => {
+  const slippage = 10000
+  // TODO: Want to fetch the min liquidity and then do something which allows us to calculate amount
   let swapType = {buy: {}} as SwapType
-  let swapAmount = new BN(1).mul(new BN(10).pow(new BN(6)))
-  let _swapAmount = Math.floor(Math.random() * (700 - 100) + 100);
+  const decimals = await getTokenDecimals(_client, dao)
+  const { tradeAmountBase, tradeAmountQuote} = await getInAmount(undefined, dao, decimals, _client)
+  let swapAmount = new BN(tradeAmountQuote).mul(new BN(10).pow(new BN(6)))
+  let _swapAmount = tradeAmountQuote
   if (direction == 'sell') {
     swapType = {sell: {}} as SwapType
-    swapAmount = new BN(1).mul(new BN(10).pow(new BN(9))) // The amount to trade
-    _swapAmount = Math.random() * (3 - 1) + 1; // Amount we're trading
+    swapAmount = new BN(tradeAmountBase).mul(new BN(10).pow(new BN(decimals))) // The amount to trade
+    _swapAmount = tradeAmountBase; // Amount we're trading
   }
   
   console.log(swapType)
@@ -34,7 +68,7 @@ const swap = async(_client, direction, amm) => {
     swapType,
     ammReserves.baseAmount,
     ammReserves.quoteAmount,
-    new BN(5000)
+    new BN(slippage)
   )
   
   
@@ -45,7 +79,7 @@ const swap = async(_client, direction, amm) => {
     }
     let _outputAmount = swapSim.minExpectedOut.toNumber() / Math.pow(10, 6)
     if (direction === 'buy') {
-      _outputAmount = swapSim.minExpectedOut.toNumber() / Math.pow(10, 9)
+      _outputAmount = swapSim.minExpectedOut.toNumber() / Math.pow(10, decimals)
     }
     // console.log(swapSim.expectedOut.toNumber())
     console.log(`Swapping via ${direction} ${_swapAmount} for ${_outputAmount}`)
@@ -58,6 +92,43 @@ const swap = async(_client, direction, amm) => {
   }
 }
 
+const mintConditionalTokens = async(_client, baseTokenMint, quoteTokenMint, baseAmountToMint, quoteAmountToMint, proposal) => {
+  const baseTokenAccount = getAssociatedTokenAddressSync(baseTokenMint ,_client.provider.publicKey, true)
+  const quoteTokenAccount = getAssociatedTokenAddressSync(quoteTokenMint ,_client.provider.publicKey, true)
+  let baseTokenBalance: RpcResponseAndContext<TokenAmount> | undefined; // TODO: Tisk Tisk
+  try {
+    // TODO: Return balance here from this function...
+    baseTokenBalance = await _client.provider.connection.getTokenAccountBalance(baseTokenAccount)
+  } catch(err){
+    console.error(err)
+    console.error('No balance found')
+  }
+  if(!baseTokenBalance || baseTokenBalance.value.uiAmount === 0){
+    console.log(`No balance located for Base Conditional Token`)
+    const baseCondTokensTx = await _client.vaultClient.mintConditionalTokens(proposal.account.baseVault, baseAmountToMint)
+    console.log(`Minted ${baseAmountToMint} Base Conditional Tokens ${baseCondTokensTx}`)
+  }
+
+  let quoteTokenBalance: RpcResponseAndContext<TokenAmount> | undefined; // TODO: Tisk Tisk
+
+  try {
+    // TODO: Return balance here from this function...
+    quoteTokenBalance = await _client.provider.connection.getTokenAccountBalance(quoteTokenAccount)
+  } catch(err){
+    console.error('No balance found')
+  }
+
+  if(!quoteTokenBalance || quoteTokenBalance.value.uiAmount === 0){
+    console.log(`No balance located for Quote Conditional Token`)
+    const quoteCondTokensTx = await _client.vaultClient.mintConditionalTokens(proposal.account.quoteVault, quoteAmountToMint)
+    console.log(`Minted ${quoteAmountToMint} Quote Conditional Tokens ${quoteCondTokensTx}`)
+  }
+}
+
+const swapLoop = async() => {
+
+}
+
 const main = async() => {
   // SWAP (Simulate trading environment)
   console.log('Swaping')
@@ -67,27 +138,20 @@ const main = async() => {
   const pendingProposals = await getPendingProposals(_client)
 
   // Mint conditional tokens
-  const tokenAddresses = pendingProposals.map(async(proposal) => {
+  pendingProposals.map(async(proposal) => {
     const baseAmountToMint = 3; // TODO: Need to mint a reasonable amount
     const quoteAmountToMint = 3000; // TODO: Need to mint a reasonable amount
-    const baseTokenAccount = getAssociatedTokenAddressSync(proposal.baseVault ,_client.provider.publicKey)
-    const quoteTokenAccount = getAssociatedTokenAddressSync(proposal.quoteVault ,_client.provider.publicKey)
-
-    const baseTokenBalance = await _client.provider.connection.getTokenAccountBalance(baseTokenAccount)
-
-    if(!baseTokenBalance || baseTokenBalance.value.uiAmount === 0){
-      console.log(`No balance located for Base Conditional Token`)
-      const baseCondTokensTx = await _client.vaultClient.mintConditionalTokens(proposal.baseVault, baseAmountToMint)
-      console.log(`Minted ${baseAmountToMint} Base Conditional Tokens ${baseCondTokensTx}`)
+    try{
+      // TODO: We should return balanc so we can size our positions
+      const [baseRevert] = getVaultRevertMintAddr(CONDITIONAL_VAULT_PROGRAM_ID, proposal.account.baseVault)
+      const [baseFinalize] = getVaultFinalizeMintAddr(CONDITIONAL_VAULT_PROGRAM_ID, proposal.account.baseVault)
+      const [quoteRevert] = getVaultRevertMintAddr(CONDITIONAL_VAULT_PROGRAM_ID, proposal.account.quoteVault)
+      const [quoteFinalize] = getVaultFinalizeMintAddr(CONDITIONAL_VAULT_PROGRAM_ID, proposal.account.quoteVault)
+      await mintConditionalTokens(_client, baseRevert, quoteRevert, baseAmountToMint, quoteAmountToMint, proposal)
+      await mintConditionalTokens(_client, baseFinalize, quoteFinalize, baseAmountToMint, quoteAmountToMint, proposal)
+    } catch(err) {
+      console.error(err)
     }
-
-    const quoteTokenBalance = await _client.provider.connection.getTokenAccountBalance(quoteTokenAccount)
-    if(!quoteTokenBalance || quoteTokenBalance.value.uiAmount === 0){
-      console.log(`No balance located for Quote Conditional Token`)
-      const quoteCondTokensTx = await _client.vaultClient.mintConditionalTokens(proposal.quoteVault, quoteAmountToMint)
-      console.log(`Minted ${quoteAmountToMint} Quote Conditional Tokens ${quoteCondTokensTx}`)
-    }
-    
   })
   
   // NOTE: This is fetching all active proposals and their AMMs 
@@ -96,15 +160,16 @@ const main = async() => {
   proposalAmm.map((proposal) => {
     setTimeout(async () => {
       // TODO: We should refactor this.
+      const dao = await _client.getDao(proposal.daoKey)
       console.log(`Swapping with Fail ${proposal.failAmm.toBase58()}`)
       console.log(`Swapping with Pass ${proposal.passAmm.toBase58()}`)
       try {
         // Buy
-        await swap(_client, 'buy fail', proposal.failAmm)
-        await swap(_client, 'buy pass', proposal.passAmm)
+        await swap(_client, 'buy', proposal.failAmm, dao)
+        await swap(_client, 'buy', proposal.passAmm, dao)
         // Sell
-        await swap(_client, 'sell fail', proposal.failAmm)
-        await swap(_client, 'sell pass', proposal.passAmm)
+        await swap(_client, 'sell', proposal.failAmm, dao)
+        await swap(_client, 'sell', proposal.passAmm, dao)
       } catch (err) {
         console.error(err)
       }
