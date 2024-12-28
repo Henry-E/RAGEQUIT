@@ -30,20 +30,21 @@ const fetchAmmsFromProposals = (pendingProposals): ProposalAmmsDao[] => {
 const getTokenDecimals = async(_client, dao) => {
   const tokenData = await provider.connection.getParsedAccountInfo(dao.tokenMint)
   // TODO: What if parsed doesn't exist?
+  // @ts-ignore
   const baseTokenDecimals = tokenData.value.data.parsed.info.decimals
   return baseTokenDecimals
 }
 
 const getInAmount = async(amount: number | undefined = undefined, dao, decimals: number, _client) => {
   if(!amount){
-    const minBaseFutarchicLiquidity = dao.minBaseFutarchicLiquidity.toNumber() / 10 ** (decimals ?? 6) // TODO: Note this is bad
-    const minQuoteFutarchicLiquidity = dao.minQuoteFutarchicLiquidity.toNumber() / 10 ** 6 // flagged for now given we know it's USDC
+    const minBaseFutarchicLiquidity = dao.minBaseFutarchicLiquidity.div(new BN(10).pow(new BN(decimals ?? 6))) // TODO: Note this is bad
+    const minQuoteFutarchicLiquidity = dao.minQuoteFutarchicLiquidity.div(new BN(10).pow(new BN(6))) // flagged for now given we know it's USDC
     // Random amount because nothing is set...
-    const tradeAmountBase = minBaseFutarchicLiquidity / (Math.random() * (8 - 6) + 6)
-    const tradeAmountQuote = minQuoteFutarchicLiquidity / Math.floor(Math.random() * (8 - 6) + 6)
+    const tradeAmountBase = minBaseFutarchicLiquidity.toNumber() / (Math.random() * (8 - 6) + 6)
+    const tradeAmountQuote = minQuoteFutarchicLiquidity.toNumber() / Math.floor(Math.random() * (8 - 6) + 6)
     return { tradeAmountBase, tradeAmountQuote}
   }
-  
+  // TODO: Get external pricing for swap
   return { tradeAmountBase: amount, tradeAmountQuote: amount }
 }
 
@@ -77,12 +78,12 @@ const swap = async(_client, direction: string, amm: PublicKey, dao) => {
       console.log('simulation failed')
       return
     }
-    let _outputAmount = swapSim.minExpectedOut.toNumber() / Math.pow(10, 6)
+    let _outputAmount = swapSim.minExpectedOut.div(new BN(10).pow(new BN(6)))
     if (direction === 'buy') {
-      _outputAmount = swapSim.minExpectedOut.toNumber() / Math.pow(10, decimals)
+      _outputAmount = swapSim.minExpectedOut.div(new BN(10).pow(new BN(decimals)))
     }
     // console.log(swapSim.expectedOut.toNumber())
-    console.log(`Swapping via ${direction} ${_swapAmount} for ${_outputAmount}`)
+    console.log(`Swapping via ${direction} ${_swapAmount} for ${_outputAmount.toString()}`)
     const swapTxn = await _client.ammClient.swap(amm, swapType, _swapAmount, _outputAmount)
     console.log(swapTxn)
     return swapTxn
@@ -105,6 +106,7 @@ const mintConditionalTokens = async(_client, baseTokenMint, quoteTokenMint, base
   }
   if(!baseTokenBalance || baseTokenBalance.value.uiAmount === 0){
     console.log(`No balance located for Base Conditional Token`)
+    
     const baseCondTokensTx = await _client.vaultClient.mintConditionalTokens(proposal.account.baseVault, baseAmountToMint)
     console.log(`Minted ${baseAmountToMint} Base Conditional Tokens ${baseCondTokensTx}`)
   }
