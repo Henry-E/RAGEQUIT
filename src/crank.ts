@@ -1,5 +1,5 @@
 import * as anchor from "@coral-xyz/anchor";
-import { createClient, getPendingProposals } from "./utils";
+import { createClient, getPendingProposals } from "./lib/utils";
 
 export const provider = anchor.AnchorProvider.env();
 anchor.setProvider(provider);

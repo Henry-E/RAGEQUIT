@@ -1,6 +1,7 @@
 import * as anchor from "@coral-xyz/anchor";
-import { AutocratClient } from "@metadaoproject/futarchy";
+import { AutocratClient } from "@metadaoproject/futarchy/v0.3";
 import { PublicKey } from '@solana/web3.js';
+import { unpackMint } from "@solana/spl-token";
 
 export const provider = anchor.AnchorProvider.env();
 anchor.setProvider(provider);
@@ -17,8 +18,8 @@ export const createClient = () => {
   return newClient;
 }
 
-export const getPendingProposals = async(_client) => {
-  const proposals = await _client.autocrat.account.proposal.all();
+export const getPendingProposals = async(client) => {
+  const proposals = await client.autocrat.account.proposal.all();
 
   const pendingProposals = proposals.filter((proposal) => {
     return proposal.account.state.pending
@@ -26,3 +27,20 @@ export const getPendingProposals = async(_client) => {
 
   return pendingProposals;
 }
+
+export const getTokenDecimals = async(mint: string) => {
+  try{
+    const tokenData = await provider.connection.getAccountInfo(new PublicKey(mint))
+    const mintData = unpackMint(new PublicKey(mint), tokenData)
+    return mintData.decimals
+  } catch (err) {
+    console.error(err)
+  }
+}
+
+export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+
+export const ONE_DAY_IN_SLOTS = 216_000
+export const TWO_DAYS_IN_SLOTS = 432_000
+export const THREE_DAYS_IN_SLOTS = 648_000
+export const FIVE_DAYS_IN_SLOTS = 1_080_000

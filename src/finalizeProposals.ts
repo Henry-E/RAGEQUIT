@@ -1,4 +1,4 @@
-import { createClient, getPendingProposals } from './utils'
+import { createClient, getPendingProposals } from './lib/utils'
 
 const main = async() => {
   
