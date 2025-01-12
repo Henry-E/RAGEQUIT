@@ -6,19 +6,20 @@
   "repository": "git@github.com:metaDAOproject/hermes.git",
   "author": "Kollan House <nallok@metadao.fi>",
   "license": "GPL-3.0",
+  "type": "module",
   "scripts": {
-    "swap": "ts-node -T src/swap.ts",
-    "create-dao": "ts-node -T src/createDao.ts",
-    "create-proposal": "ts-node -T src/createProposal.ts",
-    "finalize-proposal": "ts-node -T src/finalizeProposals.ts",
-    "crank": "ts-node -T src/crank.ts"
+    "swap": "bun run src/swap.ts",
+    "create-dao": "bun run src/createDao.ts",
+    "create-proposal": "bun run src/createProposal.ts",
+    "finalize-proposal": "bun run src/finalizeProposals.ts",
+    "crank": "bun run src/crank.ts"
   },
   "lint-staged": {
     "*.ts": "prettier -w \"**/*\" --ignore-unknown --cache"
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.28.1-beta.2",
-    "@metadaoproject/futarchy": "0.3.0-alpha.6",
+    "@metadaoproject/futarchy": "0.4.0-alpha.33",
     "@metaplex-foundation/umi-bundle-defaults": "^0.9.2",
     "@metaplex-foundation/umi-uploader-bundlr": "^0.9.2",
     "@metadaoproject/futarchy-sdk": "4.0.0-alpha.36",

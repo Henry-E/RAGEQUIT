@@ -1,8 +1,16 @@
 {
+  "ts-node": {
+    "esm": true,
     "compilerOptions": {
-      "esModuleInterop": true,
-      "moduleResolution": "node"
-    },
-    "include": ["/**/*.ts"],
-    "exclude": ["node_modules"]
-  }
+      "moduleResolution": "bundler",
+      "module": "ES2022"
+    }
+  },
+  "compilerOptions": {
+    "esModuleInterop": true,
+    "moduleResolution": "bundler",
+    "module": "ES2022"
+  },
+  "include": ["/**/*.ts"],
+  "exclude": ["node_modules"]
+}
