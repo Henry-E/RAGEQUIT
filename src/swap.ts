@@ -3,7 +3,7 @@ import { BN } from "bn.js";
 import { createClient, getPendingProposals, getTokenDecimals, provider, USDC_MINT } from "./lib/utils";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { PublicKey, RpcResponseAndContext, TokenAmount } from "@solana/web3.js";
-import { fetchAllAmmsFromProposals } from "./lib/trading";
+import { fetchAllAmmsFromProposals, fetchPriceFromJup } from "./lib/trading";
 
 const SLIPPAGE_BPS = 100;
 
@@ -31,11 +31,15 @@ const getAmmPrice = (amm: any) => {
   return price
 }
 
-const swap = async(direction: string, ammAddress: PublicKey, dao: any) => {
+const swap = async(direction: string, ammAddress: PublicKey, dao: any, outcome: "pass" | "fail") => {
   // NOTE: Core swap logic
   // Fetch amm and get price
   const amm = await client.ammClient.getAmm(ammAddress)
   const price = getAmmPrice(amm).toNumber()
+  const priceFromJup = await fetchPriceFromJup(dao.tokenMint.toBase58())
+  console.log(`Price from Jup: ${priceFromJup}`)
+  // TODO: May be worth adding in the pass vs fail....
+  console.log(`Price from AMM ${outcome}: ${price}`)
 
   // First step is assuming USDC -> Asset
   const quoteDecimals = await getTokenDecimals(USDC_MINT)
@@ -189,13 +193,13 @@ const main = async() => {
       console.log(`Swapping with Pass ${proposal.passAmm.toBase58()}`)
       try {
         // Buy fail amm
-        await swap('buy', proposal.failAmm, dao)
+        await swap('buy', proposal.failAmm, dao, 'fail')
         // Buy pass amm
-        await swap('buy', proposal.passAmm, dao)
+        await swap('buy', proposal.passAmm, dao, 'pass')
         // Sell fail amm
-        await swap('sell', proposal.failAmm, dao)
+        await swap('sell', proposal.failAmm, dao, 'fail')
         // Sell pass amm
-        await swap('sell', proposal.passAmm, dao)
+        await swap('sell', proposal.passAmm, dao, 'pass')
       } catch (err) {
         console.error(err)
       }
