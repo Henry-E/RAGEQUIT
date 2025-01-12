@@ -5,12 +5,13 @@ import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { PublicKey, RpcResponseAndContext, TokenAmount } from "@solana/web3.js";
 import { fetchAllAmmsFromProposals, fetchPriceFromJup } from "./lib/trading";
 
+// NOTE: You should adjust this for your tolerance
 const SLIPPAGE_BPS = 100;
 
 // Initialize client
 const client = createClient();
 
-const getTradeSize = async(baseDecimals: number, price: number, dao: any, amount?: number) => {
+const getTradeSize = async(baseDecimals: number, ammPrice: number, spotMarketPrice: number, dao: any, amount?: number) => {
   if(!amount){
     // TODO: Take in price and adjust...
     // TODO: This is just a dummy wrapper for determining size...
@@ -22,31 +23,39 @@ const getTradeSize = async(baseDecimals: number, price: number, dao: any, amount
     const tradeAmountQuote = minQuoteFutarchicLiquidity.toNumber() / Math.floor(Math.random() * (8 - 6) + 6)
     return { tradeAmountBase, tradeAmountQuote}
   }
-  // TODO: Get external pricing for swap
   return { tradeAmountBase: amount, tradeAmountQuote: amount }
 }
 
-const getAmmPrice = (amm: any) => {
+const getAmmPrice = (amm: any, baseDecimals: number, quoteDecimals: number) => {
   const price = PriceMath.getAmmPriceFromReserves(amm.baseAmount, amm.quoteAmount)
-  return price
+  const humanPrice = PriceMath.getHumanPriceFromReserves(amm.baseAmount, amm.quoteAmount, baseDecimals, quoteDecimals)
+  return { price, humanPrice }
 }
 
 const swap = async(direction: string, ammAddress: PublicKey, dao: any, outcome: "pass" | "fail") => {
   // NOTE: Core swap logic
-  // Fetch amm and get price
+  // Fetch amm
   const amm = await client.ammClient.getAmm(ammAddress)
-  const price = getAmmPrice(amm).toNumber()
-  const priceFromJup = await fetchPriceFromJup(dao.tokenMint.toBase58())
-  console.log(`Price from Jup: ${priceFromJup}`)
-  // TODO: May be worth adding in the pass vs fail....
-  console.log(`Price from AMM ${outcome}: ${price}`)
-
-  // First step is assuming USDC -> Asset
+  
   const quoteDecimals = await getTokenDecimals(USDC_MINT)
   const baseDecimals = await getTokenDecimals(dao.tokenMint)
 
-  const { tradeAmountBase, tradeAmountQuote} = await getTradeSize(baseDecimals, price, dao)
+  // Get external pricing for use in trade logic  
+  const { price, humanPrice } = getAmmPrice(amm, baseDecimals, quoteDecimals)
+  // NOTE: Setup this for devnet given tokens may not exist.
+  let priceFromJup = 0;
+  try {
+    priceFromJup = await fetchPriceFromJup(dao.tokenMint.toBase58())
+  } catch (err) {
+    console.error(err)
+  }
+  console.log(`Price from Jup: ${priceFromJup}`)
+  console.log(`Price from AMM ${outcome}: ${humanPrice}`)
+
+  // NOTE: This is your size logic, it should go here... Example logic is very very basic
+  const { tradeAmountBase, tradeAmountQuote} = await getTradeSize(baseDecimals, humanPrice, priceFromJup, dao)
   
+  // First step is assuming USDC -> Asset
   let swapType = {buy: {}} as SwapType
   let swapAmount = AmmMath.getChainAmount(tradeAmountQuote, quoteDecimals)
   let swapAmountHuman = tradeAmountQuote
@@ -57,7 +66,8 @@ const swap = async(direction: string, ammAddress: PublicKey, dao: any, outcome: 
     swapAmountHuman = tradeAmountBase
   }
   
-  const { expectedOut } = AmmMath.simulateSwap(
+  // NOTE: If you want to use slippage you may want to use minExpectedOut
+  const { expectedOut, minExpectedOut } = AmmMath.simulateSwap(
     swapAmount,
     swapType,
     amm.baseAmount,
@@ -65,7 +75,7 @@ const swap = async(direction: string, ammAddress: PublicKey, dao: any, outcome: 
     new BN(SLIPPAGE_BPS)
   )
 
-  let outputAmount = 0;
+  let outputAmount = 0; // NOTE: This is a number for human readability
   
   if (direction === 'buy') {
     try {
