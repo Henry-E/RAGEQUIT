@@ -1,9 +1,10 @@
 import { SwapType, getVaultRevertMintAddr, getVaultFinalizeMintAddr, CONDITIONAL_VAULT_PROGRAM_ID, PriceMath, AmmMath, FutarchyClient } from "@metadaoproject/futarchy/v0.3";
-import { BN } from "bn.js";
+import BN from "bn.js";
 import { createClient, getPendingProposals, getTokenDecimals, provider, USDC_MINT } from "./lib/utils";
-import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { getAssociatedTokenAddressSync, unpackAccount, unpackMint } from "@solana/spl-token";
 import { PublicKey, RpcResponseAndContext, TokenAmount } from "@solana/web3.js";
 import { fetchAllAmmsFromProposals, fetchPriceFromJup } from "./lib/trading";
+
 
 // NOTE: You should adjust this for your tolerance
 const SLIPPAGE_BPS = 100;
@@ -32,6 +33,22 @@ const getAmmPrice = (amm: any, baseDecimals: number, quoteDecimals: number) => {
   return { price, humanPrice }
 }
 
+const getTokenBalance = async(tokenMint: PublicKey): Promise<number | null> => {
+  const tokenAccount = getAssociatedTokenAddressSync(tokenMint, client.provider.publicKey, true)
+  try {
+    const accountInfo = await client.provider.connection.getAccountInfo(tokenAccount)
+    const mintInfo = await client.provider.connection.getAccountInfo(tokenMint)
+    if(!accountInfo) return null;
+
+    const amount = unpackAccount(tokenAccount, accountInfo).amount
+    const decimals = unpackMint(tokenMint, mintInfo).decimals
+    return Number(amount) / (10 ** decimals)
+  } catch(err) {
+    console.error(err)
+    return null
+  }
+}
+
 const swap = async(direction: string, ammAddress: PublicKey, dao: any, outcome: "pass" | "fail") => {
   // NOTE: Core swap logic
   // Fetch amm
@@ -55,16 +72,34 @@ const swap = async(direction: string, ammAddress: PublicKey, dao: any, outcome: 
 
   // NOTE: This is your size logic, it should go here... Example logic is very very basic
   const { tradeAmountBase, tradeAmountQuote} = await getTradeSize(baseDecimals, humanPrice, priceFromJup, dao)
+
+  const baseBalance = await getTokenBalance(amm.baseMint)
+  const quoteBalance = await getTokenBalance(amm.quoteMint)
+  console.log(`Base Balance: ${baseBalance}`)
+  console.log(`Quote Balance: ${quoteBalance}`)
+
   
+  let swapType: SwapType;
+  let swapAmount: BN
+  let swapAmountHuman: number
   // First step is assuming USDC -> Asset
-  let swapType = {buy: {}} as SwapType
-  let swapAmount = AmmMath.getChainAmount(tradeAmountQuote, quoteDecimals)
-  let swapAmountHuman = tradeAmountQuote
-  if (direction == 'sell') {
+  if (direction === 'buy') {
+    swapType = {buy: {}} as SwapType
+    swapAmount = AmmMath.getChainAmount(tradeAmountQuote, quoteDecimals)
+    swapAmountHuman = tradeAmountQuote
+    if(!quoteBalance || quoteBalance < tradeAmountQuote){
+      console.log(`Not enough quote balance to swap`)
+      return
+    }
+  } else {
     // From Base to Quote (eg. SOL -> USDC)
     swapType = {sell: {}} as SwapType
     swapAmount = AmmMath.getChainAmount(tradeAmountBase, baseDecimals)
     swapAmountHuman = tradeAmountBase
+    if(!baseBalance || baseBalance < tradeAmountBase){
+      console.log(`Not enough base balance to swap`)
+      return
+    }
   }
   
   // NOTE: If you want to use slippage you may want to use minExpectedOut
