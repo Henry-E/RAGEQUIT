@@ -37,6 +37,7 @@ const swap = async(direction: string, ammAddress: PublicKey, dao: any, outcome: 
   // Fetch amm
   const amm = await client.ammClient.getAmm(ammAddress)
   
+  // TODO / NOTE: We should likely cache this instead of fetching each time and making the RPC call..
   const quoteDecimals = await getTokenDecimals(USDC_MINT)
   const baseDecimals = await getTokenDecimals(dao.tokenMint)
 
