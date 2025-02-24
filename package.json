@@ -8,11 +8,8 @@
   "license": "GPL-3.0",
   "type": "module",
   "scripts": {
-    "swap": "bun run src/swap.ts",
-    "create-dao": "bun run src/createDao.ts",
-    "create-proposal": "bun run src/createProposal.ts",
-    "finalize-proposal": "bun run src/finalizeProposals.ts",
-    "crank": "bun run src/crank.ts"
+    "print-proposals": "bun run src/printProposals.ts",
+    "RAGEQUIT": "bun run src/ragequit.ts"
   },
   "lint-staged": {
     "*.ts": "prettier -w \"**/*\" --ignore-unknown --cache"
