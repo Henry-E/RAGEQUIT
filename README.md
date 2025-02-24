@@ -1,8 +1,6 @@
 # RAGEQUIT your DAO
 
-## Strategy Overview
-
-The most effective way to ensure a proposal fails is to keep the fail market price within a certain threshold of the spot price, usually 3%. This bot sells DAO tokens on the spot market and uses the cash to purchase those tokens back at a discount on the fail market. The user can specify what percentage of their tokens they want to sell and the minimum price difference they require to execute trades.
+RAGEQUIT gives DAO members a powerful way to oppose proposals through market action. The tool automates selling tokens on the spot market while buying them back cheaper on the fail market, allowing users to credibly signal they'd rather exit their position than see a proposal pass.
 
 ## Project Overview
 
