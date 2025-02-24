@@ -7,7 +7,7 @@ RAGEQUIT gives DAO members a powerful way to oppose proposals through market act
 This project provides a template for a Ragequit Bot that interacts with MetaDAO proposals on Solana. The project consists of two main scripts:
 
 1. **Print Active Proposals** – Lists all live (active) proposals along with your wallet's spot balances and the current Jupiter-quoted price for your base token.
-2. **Run Ragequit Bot** – Reads a configuration file with your selected proposal, desired sell percentage, and price deviation threshold, then monitors market conditions and (in a real bot) would execute trades when conditions are met.
+2. **Run Ragequit Bot** – Reads a configuration file with your selected proposal, desired sell percentage, and price deviation threshold, then monitors market conditions and executes trades when conditions are met.
 
 Follow the steps below to set up and run the bot.
 
