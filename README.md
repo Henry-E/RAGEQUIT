@@ -1,4 +1,10 @@
-# Ragequit Bot for MetaDAO
+# RAGEQUIT your DAO
+
+## Strategy Overview
+
+The most effective way to ensure a proposal fails is to keep the fail market price within a certain threshold of the spot price, usually 3%. This bot sells DAO tokens on the spot market and uses the cash to purchase those tokens back at a discount on the fail market. The user can specify what percentage of their tokens they want to sell and the minimum price difference they require to execute trades.
+
+## Project Overview
 
 This project provides a template for a Ragequit Bot that interacts with MetaDAO proposals on Solana. The project consists of two main scripts:
 
@@ -71,8 +77,6 @@ Your configuration file should look similar to this:
 }
 ```
 
-_Note: In this file, do not include any extra escaping for triple backticks._
-
 ## 5. Run the Ragequit Bot
 
 After setting up your configuration, start the bot with:
@@ -81,12 +85,8 @@ After setting up your configuration, start the bot with:
 bun run src/runRagequit.ts
 ```
 
-The bot will monitor market conditions every 30 seconds. When the fail market price is sufficiently below the spot price (based on your configured deviation), it will log that trade conditions are met. (You can extend the bot to execute actual trades by implementing your own trade logic.)
+The bot will monitor market conditions every 30 seconds. When the fail market price is sufficiently below the spot price (based on your configured deviation), it will log that trade conditions are met.
 
 ## Notes
 
 - **Wallet & RPC**: Ensure that your **.env** file is correctly configured with your mainnet RPC URL and wallet file path.
-- **Customization**: This template is intended as a starting point. You can adjust the monitoring loop and trade execution logic according to your trading strategy.
-- **Testing**: Always test on a devnet or with small amounts before running any live trading bot.
-
-Happy trading!
